@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]"
+
+      - name: Lint (non-blocking)
+        run: ruff check . || true
+
+      - name: Test
+        run: pytest -q
+
+      - name: Smoke - safe mock must pass the gate (exit 0)
+        run: |
+          python -m morpheus run --target mock --config .ci/mock-safe.yaml --fail-on high --out reports/
+
+      - name: Smoke - vulnerable mock must trip the gate (exit nonzero)
+        run: |
+          if python -m morpheus run --target mock --fail-on high --out reports/; then
+            echo "ERROR: vulnerable mock did not trip the gate" >&2
+            exit 1
+          else
+            echo "OK: vulnerable mock tripped the gate as expected"
+          fi
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morpheus-reports-py${{ matrix.python-version }}
+          path: reports/

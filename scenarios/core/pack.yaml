@@ -1,0 +1,15 @@
+name: core
+version: "0.1.0"
+description: >
+  Core Morpheus attack pack covering the seven agentic-AI risk categories:
+  prompt injection, indirect injection, tool abuse, PII exfiltration,
+  authorization bypass, unsafe autonomy, and data poisoning. Mapped to MITRE
+  ATLAS and the OWASP Top 10 for LLM Applications (2025).
+categories:
+  - prompt_injection
+  - indirect_injection
+  - tool_abuse
+  - pii_exfiltration
+  - authorization_bypass
+  - unsafe_autonomy
+  - data_poisoning

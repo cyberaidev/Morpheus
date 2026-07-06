@@ -1,0 +1,50 @@
+# Morpheus configuration example.
+# Copy to morpheus.yaml (gitignored) and edit for your target.
+# Resolution order: defaults < morpheus.yaml < .env < environment vars < CLI flags.
+
+# --- Generic live HTTP adapter (primary path) ---
+http:
+  base_url: "https://your-agent.example.com/v1/chat"
+  method: POST
+  timeout_seconds: 30
+  headers:
+    # ${ENV_VAR} placeholders are resolved from the environment at invoke time.
+    Authorization: "Bearer ${AGENT_API_TOKEN}"
+  request_template:
+    # ${prompt} ${system} ${conversation_id} ${context_documents} placeholders.
+    input: "${prompt}"
+    system: "${system}"
+    session: "${conversation_id}"
+    documents: "${context_documents}"
+  response_mapping:
+    # Dotted paths; numeric segments index into lists.
+    text: "output.text"
+    tool_calls: "output.tool_calls"
+    tool_call_name_field: "name"
+    tool_call_args_field: "arguments"
+    conversation_id: "session_id"
+
+# --- Cloud SDK adapters (scaffolded; install the matching extra) ---
+bedrock:
+  agent_id: "ABCDEFGHIJ"
+  agent_alias_id: "TSTALIASID"
+  region: "us-east-1"
+  # session_id: "optional-session"
+
+azure:
+  project_endpoint: "https://your-project.services.ai.azure.com/api/projects/xyz"
+  agent_id: "asst_abc123"
+  # model_deployment: "gpt-4o"
+
+openai:
+  assistant_id: "asst_abc123"
+  # base_url: "https://api.openai.com/v1"
+
+vertex:
+  project: "my-gcp-project"
+  location: "us-central1"
+  reasoning_engine_id: "1234567890"
+
+# --- Mock adapter (offline testing) ---
+mock:
+  mode: vulnerable   # or "safe"

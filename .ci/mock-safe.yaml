@@ -1,0 +1,3 @@
+# CI config: exercise the safe mock adapter (resists all shipped scenarios).
+mock:
+  mode: safe
