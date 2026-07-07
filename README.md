@@ -1,4 +1,4 @@
-# Morpheus agent security evals
+# Morpheus Agent Security Evals
 
 **Morpheus** is an open evaluation harness that runs attack scenarios against
 **AI agents deployed in the cloud**, through a pluggable target-adapter
