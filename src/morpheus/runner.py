@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Callable, Optional
 
 from .adapters.base import AdapterError, TargetAdapter
 from .detectors import run_detector
 from .models import AgentRequest, Finding, Severity
 from .scenario import AttackScenario
+
+# Signature: on_scenario(index_1_based, total, scenario) -> None
+ProgressCallback = Callable[[int, int, AttackScenario], None]
 
 
 def _now_iso() -> str:
@@ -26,15 +30,23 @@ class RunResult:
 
 
 class Runner:
-    def __init__(self, adapter: TargetAdapter):
+    def __init__(self, adapter: Optional[TargetAdapter] = None):
         self.adapter = adapter
 
-    def run(self, scenarios: list[AttackScenario], pack_name: str = "core") -> RunResult:
+    def run(
+        self,
+        scenarios: list[AttackScenario],
+        pack_name: str = "core",
+        on_scenario: Optional[ProgressCallback] = None,
+    ) -> RunResult:
         ordered = sorted(scenarios, key=lambda s: (s.category, s.id))
         started_at = _now_iso()
         findings: list[Finding] = []
 
-        for scenario in ordered:
+        total = len(ordered)
+        for index, scenario in enumerate(ordered, start=1):
+            if on_scenario is not None:
+                on_scenario(index, total, scenario)
             findings.append(self._run_one(scenario))
 
         return RunResult(
@@ -45,6 +57,15 @@ class Runner:
             finished_at=_now_iso(),
             scenarios_run=len(ordered),
         )
+
+    # -- public -------------------------------------------------------------
+    def build_request(self, scenario: AttackScenario) -> AgentRequest:
+        """Build the :class:`AgentRequest` for ``scenario`` (no network).
+
+        Exposed so callers (e.g. the CLI ``--dry-run`` path) can inspect the
+        exact request that would be sent without invoking an adapter.
+        """
+        return self._build_request(scenario)
 
     # -- internals ----------------------------------------------------------
     def _build_request(self, scenario: AttackScenario) -> AgentRequest:

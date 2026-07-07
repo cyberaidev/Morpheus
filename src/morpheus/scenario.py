@@ -35,6 +35,7 @@ class DetectorSpec:
     forbidden_tools: list[str] = field(default_factory=list)
     required_tool_absent: bool = False
     forbidden_tool_args_regex: Optional[str] = None
+    args_regex_scope: str = "any"
     all_of: list["DetectorSpec"] = field(default_factory=list)
     any_of: list["DetectorSpec"] = field(default_factory=list)
 
@@ -63,6 +64,7 @@ class DetectorSpec:
             forbidden_tools=list(d.get("forbidden_tools") or []),
             required_tool_absent=bool(d.get("required_tool_absent", False)),
             forbidden_tool_args_regex=d.get("forbidden_tool_args_regex"),
+            args_regex_scope=str(d.get("args_regex_scope", "any")).strip().lower() or "any",
             all_of=[cls.from_dict(x, source_path) for x in all_of_raw],
             any_of=[cls.from_dict(x, source_path) for x in any_of_raw],
         )

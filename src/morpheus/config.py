@@ -19,6 +19,7 @@ import yaml
 @dataclass
 class Config:
     data: dict = field(default_factory=dict)
+    dotenv: dict = field(default_factory=dict)
 
     def adapter_config(self, target: str) -> dict:
         """Return the config sub-block for a given target adapter name."""
@@ -60,6 +61,10 @@ def load(path: Optional[str] = None, dotenv_path: str = ".env") -> Config:
     """Load and merge configuration.
 
     A missing config file is not an error; defaults are used.
+
+    The parsed ``.env`` mapping is preserved on :attr:`Config.dotenv` so the CLI
+    can apply it into the process environment via :func:`apply_dotenv`, honoring
+    the documented precedence ``os.environ > .env``.
     """
     data: dict = {}
 
@@ -70,10 +75,12 @@ def load(path: Optional[str] = None, dotenv_path: str = ".env") -> Config:
             raise ValueError(f"config file {path} must contain a mapping at the top level")
         data.update(loaded)
 
+    dotenv = _parse_dotenv(dotenv_path)
+
     # .env then os.environ populate an "env" sub-mapping so adapters can pull
     # environment-style values without leaking secrets into the primary config.
     env_overlay: dict[str, str] = {}
-    env_overlay.update(_parse_dotenv(dotenv_path))
+    env_overlay.update(dotenv)
     # os.environ takes precedence over .env for the same key.
     for key, value in os.environ.items():
         env_overlay[key] = value
@@ -83,4 +90,16 @@ def load(path: Optional[str] = None, dotenv_path: str = ".env") -> Config:
     merged_env.update(env_overlay)
     data["env"] = merged_env
 
-    return Config(data=data)
+    return Config(data=data, dotenv=dotenv)
+
+
+def apply_dotenv(cfg: Config) -> None:
+    """Push parsed ``.env`` values into ``os.environ`` without overriding.
+
+    Preserves the documented precedence ``os.environ > .env``: an already-set
+    process environment variable always wins over the ``.env`` value. This is
+    what makes ``${ENV_VAR}`` placeholders (resolved from ``os.environ`` at
+    invoke time) actually see tokens that live only in ``.env``.
+    """
+    for key, value in cfg.dotenv.items():
+        os.environ.setdefault(key, value)

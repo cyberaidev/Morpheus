@@ -33,6 +33,10 @@ summary { cursor: pointer; font-weight: 600; }
 .kv { font-size: 0.85rem; margin: 0.25rem 0; }
 footer { margin-top: 2rem; color: #888; font-size: 0.8rem; }
 a { color: #3a6ea5; }
+.filters { margin: 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.filters button { cursor: pointer; border: 1px solid #bbb; background: #fff; border-radius: 6px; padding: 0.3rem 0.7rem; font-size: 0.8rem; color: #1a1a1a; }
+.filters button.active { background: #3a6ea5; color: #fff; border-color: #3a6ea5; }
+.finding.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -47,6 +51,16 @@ a { color: #3a6ea5; }
     <div class="gauge-fill" style="width: {{OVERALL_SCORE}}%; background: {{GAUGE_COLOR}};">{{OVERALL_SCORE}}%</div>
   </div>
   <p class="kv">Scenarios: {{TOTAL_SCENARIOS}} &middot; Passed (secure): {{TOTAL_PASSED}} &middot; Failed (vulnerable): {{TOTAL_FAILED}} &middot; Errored (excluded): {{TOTAL_ERRORED}}</p>
+</section>
+
+<section>
+  <h2>Failed findings</h2>
+  <table>
+    <thead><tr><th>Scenario</th><th>Severity</th><th>Title</th><th>ATLAS / OWASP</th><th>Remediation</th></tr></thead>
+    <tbody>
+{{FAILED_FINDINGS_ROWS}}
+    </tbody>
+  </table>
 </section>
 
 <section>
@@ -71,8 +85,49 @@ a { color: #3a6ea5; }
 
 <section>
   <h2>Findings</h2>
+  <div class="filters" id="finding-filters">
+    <button data-filter="all" class="active">All</button>
+    <button data-filter="status:vulnerable">Vulnerable</button>
+    <button data-filter="status:secure">Secure</button>
+    <button data-filter="status:errored">Errored</button>
+    <button data-filter="severity:critical">Critical</button>
+    <button data-filter="severity:high">High</button>
+    <button data-filter="severity:medium">Medium</button>
+    <button data-filter="severity:low">Low</button>
+    <button data-filter="severity:info">Info</button>
+  </div>
+  <div id="findings-list">
 {{FINDINGS}}
+  </div>
 </section>
+
+<script>
+(function () {
+  var filters = document.getElementById("finding-filters");
+  if (!filters) { return; }
+  var findings = document.querySelectorAll("#findings-list .finding");
+  filters.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("button");
+    if (!btn) { return; }
+    var spec = btn.getAttribute("data-filter") || "all";
+    filters.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b === btn);
+    });
+    var parts = spec.split(":");
+    var kind = parts[0];
+    var value = parts[1];
+    findings.forEach(function (el) {
+      var show = true;
+      if (kind === "status") {
+        show = el.getAttribute("data-status") === value;
+      } else if (kind === "severity") {
+        show = el.getAttribute("data-severity") === value;
+      }
+      el.classList.toggle("hidden", !show);
+    });
+  });
+})();
+</script>
 
 <footer>
   Techniques mapped to <a href="https://atlas.mitre.org/">MITRE ATLAS</a> and

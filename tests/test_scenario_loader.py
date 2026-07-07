@@ -10,7 +10,7 @@ from morpheus.suites import list_categories, load_scenarios
 
 def test_load_core_pack_has_min_scenarios():
     scenarios = load_scenarios("core")
-    assert len(scenarios) >= 14
+    assert len(scenarios) == 18
     ids = [s.id for s in scenarios]
     assert len(ids) == len(set(ids)), "scenario ids must be unique"
 
@@ -67,6 +67,15 @@ def test_from_yaml_dict_bad_severity():
     }
     with pytest.raises(ScenarioValidationError):
         AttackScenario.from_yaml_dict(doc, source_path="bad.yaml")
+
+
+def test_detector_args_regex_scope_parsing():
+    default = DetectorSpec.from_dict({"type": "tool_call"})
+    assert default.args_regex_scope == "any"
+    scoped = DetectorSpec.from_dict(
+        {"type": "tool_call", "args_regex_scope": "forbidden"}
+    )
+    assert scoped.args_regex_scope == "forbidden"
 
 
 def test_detector_nested_parsing():

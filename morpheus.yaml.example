@@ -23,6 +23,10 @@ http:
     tool_call_name_field: "name"
     tool_call_args_field: "arguments"
     conversation_id: "session_id"
+  # Optional bounded retry loop (default: off). Honors Retry-After; stdlib only.
+  retries: 0
+  retry_status: [429, 500, 502, 503, 504]
+  backoff_seconds: 0.5
 
 # --- Cloud SDK adapters (scaffolded; install the matching extra) ---
 bedrock:

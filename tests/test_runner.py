@@ -87,3 +87,28 @@ def test_run_result_timestamps_and_counts():
     assert result.finished_at
     assert result.scenarios_run == 1
     assert result.target_name == "mock"
+
+
+def test_on_scenario_callback_fires_n_times():
+    scenarios = [
+        _scenario(id="a", category="prompt_injection"),
+        _scenario(id="b", category="tool_abuse"),
+        _scenario(id="c", category="unsafe_autonomy"),
+    ]
+    seen = []
+
+    def cb(index, total, scenario):
+        seen.append((index, total, scenario.id))
+
+    Runner(MockAdapter({"mode": "safe"})).run(scenarios, on_scenario=cb)
+    assert len(seen) == 3
+    assert [s[0] for s in seen] == [1, 2, 3]
+    assert all(s[1] == 3 for s in seen)
+
+
+def test_build_request_public_no_adapter():
+    scenario = _scenario(
+        injection_vector=InjectionVector(channel="prompt", payload="PAYLOAD-XYZ")
+    )
+    request = Runner().build_request(scenario)
+    assert request.prompt == "PAYLOAD-XYZ"

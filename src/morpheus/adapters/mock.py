@@ -8,6 +8,7 @@ context documents, and metadata values so results are fully deterministic.
 
 from __future__ import annotations
 
+from ..detectors import _normalize
 from ..models import AgentRequest, AgentResponse, ToolCall
 from .base import TargetAdapter
 
@@ -35,7 +36,11 @@ class MockAdapter(TargetAdapter):
         prompt = request.prompt or ""
         docs = " ".join(request.context_documents or [])
         meta_values = " ".join(str(v) for v in (request.metadata or {}).values())
-        haystack = f"{prompt}\n{docs}\n{meta_values}".lower()
+        system = request.system or ""
+        # Normalize the haystack so obfuscated (zero-width / homoglyph) triggers
+        # still fire; keep the raw prompt for tool-arg echoes.
+        raw_haystack = f"{prompt}\n{docs}\n{meta_values}"
+        haystack = _normalize(raw_haystack).lower()
 
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -47,6 +52,25 @@ class MockAdapter(TargetAdapter):
             )
         if "dan" in haystack or "unrestricted" in haystack or "jailbreak" in haystack:
             text_parts.append("Sure, operating in DAN unrestricted mode now.")
+
+        # 1b. System-prompt exfiltration (raw or "encoded"): leak the seeded
+        # system secret verbatim so the must_not_contain detector catches it.
+        if ("system prompt" in haystack or "base64" in haystack) and system:
+            text_parts.append(f"Here is my system prompt verbatim: {system}")
+
+        # 1c. SSRF against a cloud metadata endpoint: echo the target URL into a
+        # fetch tool call so the tool_call detector's arg regex matches.
+        if "169.254.169.254" in raw_haystack or "meta-data" in raw_haystack.lower() or (
+            "metadata.google.internal" in raw_haystack.lower()
+        ):
+            tool_calls.append(
+                ToolCall(
+                    name="http_get",
+                    arguments={"url": prompt[:200]},
+                    raw=f"http_get({prompt[:200]})",
+                )
+            )
+            text_parts.append("Fetching the requested metadata endpoint now.")
 
         # 2. Canary leakage: echo any canary token from metadata or documents.
         canary = request.metadata.get("canary") if request.metadata else None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import time
 import urllib.error
@@ -12,6 +13,8 @@ from typing import Any
 
 from ..models import AgentRequest, AgentResponse, ToolCall
 from .base import AdapterError, TargetAdapter
+
+_DEFAULT_RETRY_STATUS = [429, 500, 502, 503, 504]
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.]*)\}")
@@ -37,6 +40,15 @@ class GenericHTTPAdapter(TargetAdapter):
             raise AdapterError("http.response_mapping.text (dotted path) is required")
         self.response_mapping = mapping
 
+        # Retry configuration (default: off).
+        self.retries = int(http.get("retries", 0) or 0)
+        retry_status = http.get("retry_status")
+        if retry_status is None:
+            self.retry_status = set(_DEFAULT_RETRY_STATUS)
+        else:
+            self.retry_status = {int(s) for s in retry_status}
+        self.backoff_seconds = float(http.get("backoff_seconds", 0.5))
+
     # -- public -------------------------------------------------------------
     def invoke(self, request: AgentRequest) -> AgentResponse:
         ctx = {
@@ -57,19 +69,7 @@ class GenericHTTPAdapter(TargetAdapter):
         )
 
         start = time.perf_counter()
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                status = resp.getcode()
-                raw = resp.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as exc:  # non-2xx
-            body = _read_error_body(exc)
-            raise AdapterError(
-                _redact(f"HTTP {exc.code} from {self.base_url}: {body[:500]}")
-            ) from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise AdapterError(
-                _redact(f"request to {self.base_url} failed: {exc}")
-            ) from exc
+        status, raw = self._send_with_retries(req)
         latency_ms = (time.perf_counter() - start) * 1000.0
 
         if not (200 <= status < 300):
@@ -108,6 +108,56 @@ class GenericHTTPAdapter(TargetAdapter):
         )
 
     # -- helpers ------------------------------------------------------------
+    def _send_with_retries(self, req: urllib.request.Request) -> tuple[int, str]:
+        """Send ``req`` with a bounded exponential-backoff retry loop.
+
+        Retries only on configured retry statuses and transient network errors
+        (``TimeoutError`` / ``URLError``). Honors a ``Retry-After`` header (in
+        seconds) when present. Returns ``(status, raw_body)`` for the final
+        attempt; raises :class:`AdapterError` on exhausted retries or a
+        non-retryable failure.
+        """
+        attempts = max(self.retries, 0) + 1
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            retry_after: float | None = None
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                    return resp.getcode(), resp.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as exc:  # non-2xx
+                body = _read_error_body(exc)
+                if exc.code in self.retry_status and attempt < attempts - 1:
+                    retry_after = _parse_retry_after(exc.headers)
+                    last_exc = AdapterError(
+                        _redact(f"HTTP {exc.code} from {self.base_url}: {body[:500]}")
+                    )
+                else:
+                    # Return the status so the caller emits the standard error.
+                    return exc.code, body
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                if attempt < attempts - 1:
+                    last_exc = AdapterError(
+                        _redact(f"request to {self.base_url} failed: {exc}")
+                    )
+                else:
+                    raise AdapterError(
+                        _redact(f"request to {self.base_url} failed: {exc}")
+                    ) from exc
+
+            # Backoff before the next attempt.
+            if retry_after is not None:
+                delay = retry_after
+            else:
+                delay = self.backoff_seconds * (2 ** attempt)
+                delay += random.uniform(0, self.backoff_seconds * 0.1)
+            if delay > 0:
+                time.sleep(delay)
+
+        # Should be unreachable, but guard defensively.
+        raise last_exc or AdapterError(
+            _redact(f"request to {self.base_url} failed after {attempts} attempts")
+        )
+
     def _extract_tool_calls(self, data: Any) -> list[ToolCall]:
         path = self.response_mapping.get("tool_calls")
         if not path:
@@ -233,3 +283,17 @@ def _read_error_body(exc: urllib.error.HTTPError) -> str:
         return exc.read().decode("utf-8", errors="replace")
     except Exception:  # pragma: no cover - defensive
         return str(exc)
+
+
+def _parse_retry_after(headers: Any) -> float | None:
+    """Parse a ``Retry-After`` header value in seconds; return None if absent."""
+    if headers is None:
+        return None
+    value = headers.get("Retry-After") if hasattr(headers, "get") else None
+    if not value:
+        return None
+    try:
+        seconds = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
