@@ -1,4 +1,4 @@
-# Morpheus
+# Morpheus Agent Security Evals
 
 [![CI](https://github.com/cyberaidev/Morpheus/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberaidev/Morpheus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/cyberaidev/Morpheus/blob/main/LICENSE)
